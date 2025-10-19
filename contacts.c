@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <termios.h>
+#include <unistd.h>
 
 #define FILE_NAME "contacts.txt"
 #define MAX_LEN 1024
@@ -56,11 +58,19 @@ void base64_decode(const char *input, char *output) {
 // Function to authenticate user
 void authenticate() {
     char inputUser[50], inputPass[50];
+    struct termios oldt, newt;
 
     printf("Enter Username: ");
     scanf("%s", inputUser);
+
     printf("Enter Password: ");
+    tcgetattr(STDIN_FILENO, &oldt);           // Get current terminal settings
+    newt = oldt;
+    newt.c_lflag &= ~ECHO;                    // Disable echo
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);  // Apply changes
     scanf("%s", inputPass);
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);  // Restore original settings
+    printf("\n");                             // Move to next line
 
     if (strcmp(inputUser, USERNAME) != 0 || strcmp(inputPass, PASSWORD) != 0) {
         printf("Access Denied! Invalid Credentials.\n");
@@ -68,6 +78,7 @@ void authenticate() {
     }
     printf("Login Successful!\n");
 }
+
 
 // Function to add a new contact
 void addContact() {
