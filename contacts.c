@@ -1,88 +1,81 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+#include <openssl/sha.h>
 
-#define FILE_NAME "contacts.txt"
+#define FILE_NAME "contacts.enc"
 #define MAX_LEN 1024
+#define AES_KEYLEN 32     // 256-bit key
+#define AES_BLOCK_SIZE 16 // 128-bit block
 
 // Hardcoded username and password
-#define USERNAME "enp7s0"
-#define PASSWORD "infected"
-
-// Detect OS
-#ifdef _WIN32
-    #include <conio.h>
-#else
-    #include <termios.h>
-    #include <unistd.h>
-#endif
-
-// Base64 Encoding Table
-const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-// Base64 encode
-void base64_encode(const char *input, char *output) {
-    int i, j, len = strlen(input);
-    int val = 0, valb = -6;
-    for (i = 0, j = 0; i < len; i++) {
-        val = (val << 8) | (unsigned char)input[i];
-        valb += 8;
-        while (valb >= 0) {
-            output[j++] = base64_table[(val >> valb) & 0x3F];
-            valb -= 6;
-        }
-    }
-    if (valb > -6) output[j++] = base64_table[((val << 8) >> (valb + 8)) & 0x3F];
-    while (j % 4) output[j++] = '=';
-    output[j] = '\0';
-}
-
-// Base64 index finder
-int base64_index(char c) {
-    char *ptr = strchr(base64_table, c);
-    return ptr ? (int)(ptr - base64_table) : -1;
-}
-
-// Base64 decode
-void base64_decode(const char *input, char *output) {
-    int i, j, len = strlen(input);
-    int val = 0, valb = -8;
-    for (i = 0, j = 0; i < len; i++) {
-        if (input[i] == '=' || base64_index(input[i]) == -1) continue;
-        val = (val << 6) | base64_index(input[i]);
-        valb += 6;
-        if (valb >= 0) {
-            output[j++] = (val >> valb) & 0xFF;
-            valb -= 8;
-        }
-    }
-    output[j] = '\0';
-}
+#define USERNAME "anonymous"
+#define PASSWORD "contacts@517781525"
 
 // Cross-platform hidden password input
-void getHiddenPassword(char *pass) {
 #ifdef _WIN32
-    int i = 0;
-    char ch;
-    while ((ch = _getch()) != '\r') { // Enter key
-        if (ch == '\b' && i > 0) { // Backspace
-            i--;
-            printf("\b \b");
-        } else if (ch != '\b') {
-            pass[i++] = ch;
-            printf("*"); // Show asterisk
-        }
+
+#include <conio.h>
+void getHiddenPassword(char *pass) {
+    int i = 0; char ch;
+    while ((ch = _getch()) != '\r') {
+        if (ch == '\b' && i > 0) { i--; printf("\b \b"); }
+        else if (ch != '\b') { pass[i++] = ch; printf("*"); }
     }
     pass[i] = '\0';
+}
 #else
+#include <termios.h>
+#include <unistd.h>
+void getHiddenPassword(char *pass) {
     struct termios oldt, newt;
     tcgetattr(STDIN_FILENO, &oldt);
-    newt = oldt;
-    newt.c_lflag &= ~ECHO;
+    newt = oldt; newt.c_lflag &= ~ECHO;
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
     scanf("%s", pass);
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+}
 #endif
+
+// Key derivation: SHA-256 of PASSWORD
+void deriveKey(const char *password, unsigned char *key) {
+    SHA256((unsigned char*)password, strlen(password), key);
+}
+
+// AES Encryption
+int encrypt(const unsigned char *plaintext, int plaintext_len,
+            const unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    int len, ciphertext_len;
+
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
+    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len);
+    ciphertext_len = len;
+    EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
+    ciphertext_len += len;
+    EVP_CIPHER_CTX_free(ctx);
+    return ciphertext_len;
+}
+
+// AES Decryption
+int decrypt(const unsigned char *ciphertext, int ciphertext_len,
+            const unsigned char *key, unsigned char *iv, unsigned char *plaintext) {
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    int len, plaintext_len;
+
+    EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
+    EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len);
+    plaintext_len = len;
+    if (EVP_DecryptFinal_ex(ctx, plaintext + len, &len) <= 0) {
+        EVP_CIPHER_CTX_free(ctx);
+        return -1; // Decryption failed (wrong password or corrupted)
+    }
+    plaintext_len += len;
+    plaintext[plaintext_len] = '\0';
+    EVP_CIPHER_CTX_free(ctx);
+    return plaintext_len;
 }
 
 // Authenticate user
@@ -91,7 +84,7 @@ void authenticate() {
 
     printf("Enter Username: ");
     fgets(inputUser, sizeof(inputUser), stdin);
-    inputUser[strcspn(inputUser, "\n")] = '\0';  // remove trailing newline
+    inputUser[strcspn(inputUser, "\n")] = '\0';
 
     printf("Enter Password: ");
     getHiddenPassword(inputPass);
@@ -101,117 +94,117 @@ void authenticate() {
         printf("Access Denied! Invalid Credentials.\n");
         exit(1);
     }
-
     printf("Login Successful!\n");
 }
 
-
-// Add new contact
+// Write contact with IV + length + ciphertext
 void addContact() {
-    char name[50], mobile[15], email[50], contactString[MAX_LEN], encodedContact[MAX_LEN];
+    char name[50], mobile[15], email[50], contactString[MAX_LEN];
+    unsigned char key[AES_KEYLEN], iv[AES_BLOCK_SIZE], ciphertext[MAX_LEN];
+    int ciphertext_len;
 
-    printf("Enter Name: ");
-    scanf("%s", name);
-    printf("Enter Mobile: ");
-    scanf("%s", mobile);
-    printf("Enter Email: ");
-    scanf("%s", email);
+    printf("Enter Name: "); scanf("%s", name);
+    printf("Enter Mobile: "); scanf("%s", mobile);
+    printf("Enter Email: "); scanf("%s", email);
 
     snprintf(contactString, sizeof(contactString), "%s %s %s", name, mobile, email);
-    base64_encode(contactString, encodedContact);
+    deriveKey(PASSWORD, key);
 
-    FILE *file = fopen(FILE_NAME, "a");
-    if (file == NULL) {
-        printf("Error opening file!\n");
-        return;
-    }
-    fprintf(file, "%s\n", encodedContact);
+    if (!RAND_bytes(iv, AES_BLOCK_SIZE)) { printf("Error generating IV!\n"); return; }
+
+    ciphertext_len = encrypt((unsigned char*)contactString, strlen(contactString), key, iv, ciphertext);
+
+    FILE *file = fopen(FILE_NAME, "ab");
+    if (!file) { printf("Error opening file!\n"); return; }
+
+    fwrite(iv, 1, AES_BLOCK_SIZE, file);
+    fwrite(&ciphertext_len, sizeof(int), 1, file); // store ciphertext length
+    fwrite(ciphertext, 1, ciphertext_len, file);
     fclose(file);
 
     printf("Contact saved successfully!\n");
 }
 
+// Read one contact from file
+int readContact(FILE *file, unsigned char *iv, unsigned char *ciphertext) {
+    int ciphertext_len;
+    if (fread(iv, 1, AES_BLOCK_SIZE, file) != AES_BLOCK_SIZE) return 0;
+    if (fread(&ciphertext_len, sizeof(int), 1, file) != 1) return 0;
+    if (fread(ciphertext, 1, ciphertext_len, file) != ciphertext_len) return 0;
+    return ciphertext_len;
+}
+
+
 // Search contact
 void searchContact() {
-    FILE *file = fopen(FILE_NAME, "r");
-    if (file == NULL) {
-        printf("Error opening file!\n");
-        return;
-    }
+    FILE *file = fopen(FILE_NAME, "rb");
+    if (!file) { printf("Error opening file!\n"); return; }
 
-    char searchName[50], encodedLine[MAX_LEN], decodedLine[MAX_LEN];
+    char searchName[50]; unsigned char iv[AES_BLOCK_SIZE], ciphertext[MAX_LEN], plaintext[MAX_LEN];
+    int ciphertext_len;
     int found = 0;
+    unsigned char key[AES_KEYLEN];
 
-    printf("Enter name to search: ");
-    scanf("%s", searchName);
+    deriveKey(PASSWORD, key);
 
-    while (fgets(encodedLine, sizeof(encodedLine), file)) {
-        encodedLine[strcspn(encodedLine, "\n")] = 0;
-        base64_decode(encodedLine, decodedLine);
+    printf("Enter name to search: "); scanf("%s", searchName);
 
+    while ((ciphertext_len = readContact(file, iv, ciphertext))) {
+        if (decrypt(ciphertext, ciphertext_len, key, iv, plaintext) < 0) continue;
         char name[50], mobile[15], email[50];
-        if (sscanf(decodedLine, "%s %s %s", name, mobile, email) == 3) {
+        if (sscanf((char*)plaintext, "%s %s %s", name, mobile, email) == 3) {
             if (strcmp(name, searchName) == 0) {
-                printf("\nContact Found:\n");
-                printf("Name: %s\nMobile: %s\nEmail: %s\n", name, mobile, email);
-                found = 1;
-                break;
+                printf("\nContact Found:\nName: %s\nMobile: %s\nEmail: %s\n", name, mobile, email);
+                found = 1; break;
             }
         }
     }
 
-    if (!found)
-        printf("\nContact not found!\n");
-
+    if (!found) printf("Contact not found!\n");
     fclose(file);
 }
 
 // Delete contact
 void deleteContact() {
-    FILE *file = fopen(FILE_NAME, "r");
-    if (file == NULL) {
-        printf("Error opening file!\n");
-        return;
-    }
+    FILE *file = fopen(FILE_NAME, "rb");
+    if (!file) { printf("Error opening file!\n"); return; }
 
-    char searchName[50], encodedLine[MAX_LEN], decodedLine[MAX_LEN];
-    char tempFile[] = "temp.txt";
-    FILE *temp = fopen(tempFile, "w");
+    FILE *temp = fopen("temp.enc", "wb");
+    if (!temp) { fclose(file); printf("Error!\n"); return; }
+
+    char searchName[50]; unsigned char iv[AES_BLOCK_SIZE], ciphertext[MAX_LEN], plaintext[MAX_LEN];
+    int ciphertext_len;
     int found = 0;
+    unsigned char key[AES_KEYLEN];
 
-    printf("Enter name to delete: ");
-    scanf("%s", searchName);
+    deriveKey(PASSWORD, key);
+    printf("Enter name to delete: "); scanf("%s", searchName);
 
-    while (fgets(encodedLine, sizeof(encodedLine), file)) {
-        encodedLine[strcspn(encodedLine, "\n")] = 0;
-        base64_decode(encodedLine, decodedLine);
-
+    while ((ciphertext_len = readContact(file, iv, ciphertext))) {
+        if (decrypt(ciphertext, ciphertext_len, key, iv, plaintext) < 0) continue;
         char name[50], mobile[15], email[50];
-        if (sscanf(decodedLine, "%s %s %s", name, mobile, email) == 3) {
-            if (strcmp(name, searchName) == 0) {
-                found = 1;
-                continue;
-            }
+        if (sscanf((char*)plaintext, "%s %s %s", name, mobile, email) == 3) {
+            if (strcmp(name, searchName) == 0) { found = 1; continue; }
         }
-        fprintf(temp, "%s\n", encodedLine);
+        fwrite(iv, 1, AES_BLOCK_SIZE, temp);
+        fwrite(ciphertext, 1, ciphertext_len, temp);
+        fwrite("\n", 1, 1, temp);
     }
 
     fclose(file);
     fclose(temp);
 
     remove(FILE_NAME);
-    rename(tempFile, FILE_NAME);
+    rename("temp.enc", FILE_NAME);
 
-    if (found)
-        printf("Contact deleted successfully!\n");
-    else
-        printf("Contact not found!\n");
+    if (found) printf("Contact deleted successfully!\n");
+    else printf("Contact not found!\n");
 }
 
 // Edit contact
 void editContact() {
     deleteContact();
-    printf("Enter new details for the contact:\n");
+    printf("Enter new details:\n");
     addContact();
 }
 
@@ -230,7 +223,7 @@ int main() {
             case 3: deleteContact(); break;
             case 4: editContact(); break;
             case 5: printf("Exiting...\n"); return 0;
-            default: printf("Invalid choice! Try again.\n");
+            default: printf("Invalid choice!\n");
         }
     }
 }
