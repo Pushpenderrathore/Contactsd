@@ -16,4 +16,4 @@
 
 # CAUTION!
 
- Never try to tamper This software data. It can be overwritten or Crash Program to work ecuase of that Data Will be Unusabel or Corupted forever.
+Never try to Tamper This software data. It can be overwritten or Crash Program to work B'coz of that Data Will be Unusable or Corupted forever.
