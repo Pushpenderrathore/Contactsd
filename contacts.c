@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <termios.h>
-#include <unistd.h>
 
 #define FILE_NAME "contacts.txt"
 #define MAX_LEN 1024
@@ -11,14 +9,21 @@
 #define USERNAME "enp7s0"
 #define PASSWORD "infected"
 
+// Detect OS
+#ifdef _WIN32
+    #include <conio.h>
+#else
+    #include <termios.h>
+    #include <unistd.h>
+#endif
+
 // Base64 Encoding Table
 const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-// Function to encode a string into Base64
+// Base64 encode
 void base64_encode(const char *input, char *output) {
     int i, j, len = strlen(input);
     int val = 0, valb = -6;
-
     for (i = 0, j = 0; i < len; i++) {
         val = (val << 8) | (unsigned char)input[i];
         valb += 8;
@@ -28,21 +33,20 @@ void base64_encode(const char *input, char *output) {
         }
     }
     if (valb > -6) output[j++] = base64_table[((val << 8) >> (valb + 8)) & 0x3F];
-    while (j % 4) output[j++] = '='; // Padding
+    while (j % 4) output[j++] = '=';
     output[j] = '\0';
 }
 
-// Function to find Base64 character index
+// Base64 index finder
 int base64_index(char c) {
     char *ptr = strchr(base64_table, c);
     return ptr ? (int)(ptr - base64_table) : -1;
 }
 
-// Function to decode a Base64 string
+// Base64 decode
 void base64_decode(const char *input, char *output) {
     int i, j, len = strlen(input);
     int val = 0, valb = -8;
-
     for (i = 0, j = 0; i < len; i++) {
         if (input[i] == '=' || base64_index(input[i]) == -1) continue;
         val = (val << 6) | base64_index(input[i]);
@@ -55,32 +59,54 @@ void base64_decode(const char *input, char *output) {
     output[j] = '\0';
 }
 
-// Function to authenticate user
+// Cross-platform hidden password input
+void getHiddenPassword(char *pass) {
+#ifdef _WIN32
+    int i = 0;
+    char ch;
+    while ((ch = _getch()) != '\r') { // Enter key
+        if (ch == '\b' && i > 0) { // Backspace
+            i--;
+            printf("\b \b");
+        } else if (ch != '\b') {
+            pass[i++] = ch;
+            printf("*"); // Show asterisk
+        }
+    }
+    pass[i] = '\0';
+#else
+    struct termios oldt, newt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+    newt.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    scanf("%s", pass);
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+#endif
+}
+
+// Authenticate user
 void authenticate() {
     char inputUser[50], inputPass[50];
-    struct termios oldt, newt;
 
     printf("Enter Username: ");
-    scanf("%s", inputUser);
+    fgets(inputUser, sizeof(inputUser), stdin);
+    inputUser[strcspn(inputUser, "\n")] = '\0';  // remove trailing newline
 
     printf("Enter Password: ");
-    tcgetattr(STDIN_FILENO, &oldt);           // Get current terminal settings
-    newt = oldt;
-    newt.c_lflag &= ~ECHO;                    // Disable echo
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);  // Apply changes
-    scanf("%s", inputPass);
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);  // Restore original settings
-    printf("\n");                             // Move to next line
+    getHiddenPassword(inputPass);
+    printf("\n");
 
     if (strcmp(inputUser, USERNAME) != 0 || strcmp(inputPass, PASSWORD) != 0) {
         printf("Access Denied! Invalid Credentials.\n");
         exit(1);
     }
+
     printf("Login Successful!\n");
 }
 
 
-// Function to add a new contact
+// Add new contact
 void addContact() {
     char name[50], mobile[15], email[50], contactString[MAX_LEN], encodedContact[MAX_LEN];
 
@@ -92,7 +118,6 @@ void addContact() {
     scanf("%s", email);
 
     snprintf(contactString, sizeof(contactString), "%s %s %s", name, mobile, email);
-    
     base64_encode(contactString, encodedContact);
 
     FILE *file = fopen(FILE_NAME, "a");
@@ -106,7 +131,7 @@ void addContact() {
     printf("Contact saved successfully!\n");
 }
 
-// Function to search for a contact
+// Search contact
 void searchContact() {
     FILE *file = fopen(FILE_NAME, "r");
     if (file == NULL) {
@@ -122,7 +147,6 @@ void searchContact() {
 
     while (fgets(encodedLine, sizeof(encodedLine), file)) {
         encodedLine[strcspn(encodedLine, "\n")] = 0;
-
         base64_decode(encodedLine, decodedLine);
 
         char name[50], mobile[15], email[50];
@@ -136,14 +160,13 @@ void searchContact() {
         }
     }
 
-    if (!found) {
+    if (!found)
         printf("\nContact not found!\n");
-    }
 
     fclose(file);
 }
 
-// Function to delete a contact
+// Delete contact
 void deleteContact() {
     FILE *file = fopen(FILE_NAME, "r");
     if (file == NULL) {
@@ -167,7 +190,7 @@ void deleteContact() {
         if (sscanf(decodedLine, "%s %s %s", name, mobile, email) == 3) {
             if (strcmp(name, searchName) == 0) {
                 found = 1;
-                continue; // Skip writing this contact
+                continue;
             }
         }
         fprintf(temp, "%s\n", encodedLine);
@@ -185,19 +208,18 @@ void deleteContact() {
         printf("Contact not found!\n");
 }
 
-// Function to edit a contact
+// Edit contact
 void editContact() {
     deleteContact();
     printf("Enter new details for the contact:\n");
     addContact();
 }
 
-// Main function
+// Main
 int main() {
-    authenticate(); // Authenticate user before execution
+    authenticate();
 
     int choice;
-
     while (1) {
         printf("\n1. Add Contact\n2. Search Contact\n3. Delete Contact\n4. Edit Contact\n5. Exit\nEnter choice: ");
         scanf("%d", &choice);
@@ -212,4 +234,3 @@ int main() {
         }
     }
 }
-
