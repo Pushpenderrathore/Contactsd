@@ -14,6 +14,21 @@
 ```
 ---
 
+# result.img (ADMIN ONLY – NOT FOR PUBLIC USE)
+
+Open:
+sudo cryptsetup open result.img mysecure
+sudo mount /dev/mapper/mysecure /mnt/secure
+
+Files are inside:
+/mnt/secure
+
+Close:
+sudo umount /mnt/secure
+sudo cryptsetup close mysecure
+
+---
+
 # CAUTION!
 
-Never try to Tamper This software data. It can be overwritten or Crash Program to work B'coz of that Data Will be Unusable or Corupted forever.
+Never try to Tamper This tool. It can be overwritten or Crash.
