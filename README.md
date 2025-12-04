@@ -56,4 +56,4 @@ sudo cryptsetup close mysecure
 
 ## License
 
-Contactsd is intended for responsible and authorized use only. Please consult your organization’s security policies before deployment.
+Contactsd is intended for responsible and authorized use only. Please consult our organization’s security policies before deployment.
