@@ -1,34 +1,59 @@
-# USAGE IN LINUX
+# Contactsd
 
-```bash
- gcc contacts.c -o a.out -lssl -lcrypto
- ./a.out 
-```
+Contactsd is a secure contacts management tool designed to function on both Linux and Windows platforms. It utilizes OpenSSL libraries for cryptographic operations and provides enhanced data protection by supporting encrypted disk images.
+
 ---
 
-# USAGE IN WINDOWS
+## Usage on Linux
+
+To compile and run Contactsd on Linux:
 
 ```bash
- gcc test.c -o file.exe -lssl -lcrypto
- ./file.exe
+gcc contacts.c -o contactsd -lssl -lcrypto
+./contactsd
 ```
+
 ---
 
-# result.img (ADMIN ONLY – NOT FOR PUBLIC USE)
+## Usage on Windows
 
-Open:
+To compile and run Contactsd on Windows:
+
+```bash
+gcc contacts.c -o contactsd.exe -lssl -lcrypto
+./contactsd.exe
+```
+
+> Note: Ensure you have OpenSSL and GCC installed on your Windows environment. If your source file is named `test.c`, adjust the command accordingly.
+
+---
+
+## Working with Encrypted Images (`result.img`) **(Admin Only — Not for Public Use)**
+
+### To Open the Encrypted Image:
+
+```bash
 sudo cryptsetup open result.img mysecure
 sudo mount /dev/mapper/mysecure /mnt/secure
+```
 
-Files are inside:
-/mnt/secure
+You can access secured files at `/mnt/secure`.
 
-Close:
+### To Close and Unmount:
+
+```bash
 sudo umount /mnt/secure
 sudo cryptsetup close mysecure
+```
 
 ---
 
-# CAUTION!
+## Security Notice & Caution
 
-Never try to Tamper This tool. It can be overwritten or Crash.
+**Do not attempt to tamper with this tool or its encrypted files. Unauthorized actions may result in data loss, corruption, or irreversible damage. Always use administrative privileges responsibly and maintain secure backups.**
+
+---
+
+## License
+
+Contactsd is intended for responsible and authorized use only. Please consult your organization’s security policies before deployment.
